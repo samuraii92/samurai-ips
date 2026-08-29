@@ -9,8 +9,7 @@ app = Flask(__name__)
 # كلمة السر الخاصة بك للدخول للوحة التحكم
 ADMIN_PASS = "samurai2026" 
 
-# الاتصال بقاعدة بيانات MongoDB السحابية عبر متغيرات البيئة
-MONGO_URI = os.environ.get("MONGO_URI")
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://mimodj615_db_user:9C3rJ7Rgq05lAaSj@cluster0.5npg1u8.mongodb.net/?appName=Cluster0")
 client = MongoClient(MONGO_URI)
 db = client["samurai_db"]
 tokens_collection = db["tokens"]
