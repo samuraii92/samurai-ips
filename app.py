@@ -1,29 +1,19 @@
 from flask import Flask, request, render_template_string, redirect, jsonify
-import sqlite3
+from pymongo import MongoClient
 import datetime
 import secrets
+import os
 
 app = Flask(__name__)
 
 # 🔴 كلمة السر الخاصة بك للدخول للوحة التحكم 🔴
 ADMIN_PASS = "samurai2026" 
 
-def init_db():
-    conn = sqlite3.connect('samurai.db')
-    c = conn.cursor()
-    # تحديث قاعدة البيانات لتشمل تاريخ البدء والحد الأقصى للأيبيهات
-    c.execute('''CREATE TABLE IF NOT EXISTS tokens (
-                    token TEXT PRIMARY KEY, 
-                    hwid TEXT, 
-                    start_date DATETIME, 
-                    expiry DATETIME, 
-                    status TEXT,
-                    max_ips INTEGER
-                )''')
-    conn.commit()
-    conn.close()
-
-init_db()
+# الاتصال بقاعدة بيانات MongoDB السحابية (عن طريق متغيرات البيئة في رندر)
+MONGO_URI = os.environ.get("MONGO_URI")
+client = MongoClient(MONGO_URI)
+db = client["samurai_db"]
+tokens_collection = db["tokens"]
 
 # تصميم اللوحة باللون الأسود والأحمر
 DASHBOARD_HTML = """
@@ -78,19 +68,19 @@ DASHBOARD_HTML = """
         </tr>
         {% for row in tokens %}
         <tr>
-            <td style="color: #66fcf1; font-family: monospace;">{{ row[0] }}</td>
+            <td style="color: #66fcf1; font-family: monospace;">{{ row.get('token') }}</td>
             <td>
-                {% if row[4] == 'NEW' %}<span class="badge-new">UNUSED</span>
-                {% elif row[4] == 'ACTIVE' %}<span class="badge-active">ONLINE</span>
-                {% else %}<span class="badge-burned">{{ row[4] }}</span>{% endif %}
+                {% if row.get('status') == 'NEW' %}<span class="badge-new">UNUSED</span>
+                {% elif row.get('status') == 'ACTIVE' %}<span class="badge-active">ONLINE</span>
+                {% else %}<span class="badge-burned">{{ row.get('status') }}</span>{% endif %}
             </td>
-            <td style="color: #f39c12; font-weight: bold;">{{ row[5] }}</td>
-            <td style="font-size: 12px; color: #7f8c8d;">{{ row[1][:15] + '...' if row[1] else 'Waiting...' }}</td>
-            <td>{{ row[2] or '-' }}</td>
-            <td>{{ row[3] or '-' }}</td>
+            <td style="color: #f39c12; font-weight: bold;">{{ row.get('max_ips') }}</td>
+            <td style="font-size: 12px; color: #7f8c8d;">{{ (row.get('hwid')[:15] + '...') if row.get('hwid') else 'Waiting...' }}</td>
+            <td>{{ row.get('start_date') or '-' }}</td>
+            <td>{{ row.get('expiry') or '-' }}</td>
             <td style="font-weight: bold;">
-                {% if row[3] %}
-                    {% set days = (datetime.strptime(row[3], '%Y-%m-%d %H:%M:%S') - datetime.now()).days %}
+                {% if row.get('expiry') %}
+                    {% set days = (datetime.strptime(row.get('expiry'), '%Y-%m-%d %H:%M:%S') - datetime.now()).days %}
                     {% if days > 5 %}<span style="color: #2ecc71;">{{ days }} Days</span>
                     {% elif days > 0 %}<span style="color: #f1c40f;">{{ days }} Days</span>
                     {% else %}<span style="color: #e74c3c;">Expired</span>{% endif %}
@@ -105,18 +95,15 @@ DASHBOARD_HTML = """
 </html>
 """
 
-# 🔴 رابط لوحة التحكم الذي طلبته 🔴
+# 🔴 رابط لوحة التحكم 🔴
 @app.route('/samurai/proxies/admin/dashboard')
 def dashboard():
     pwd = request.args.get('pwd')
     if pwd != ADMIN_PASS:
         return "Access Denied. Unauthorized.", 401
         
-    conn = sqlite3.connect('samurai.db')
-    c = conn.cursor()
-    c.execute("SELECT token, hwid, start_date, expiry, status, max_ips FROM tokens ORDER BY expiry DESC")
-    tokens = c.fetchall()
-    conn.close()
+    # جلب التوكنات من MongoDB وعرض الأحدث أولاً
+    tokens = list(tokens_collection.find().sort("_id", -1))
     return render_template_string(DASHBOARD_HTML, tokens=tokens, datetime=datetime.datetime, pwd=pwd)
 
 @app.route('/samurai/proxies/admin/create', methods=['POST'])
@@ -126,14 +113,18 @@ def create_token():
         return "Unauthorized!", 401
         
     max_ips = int(request.form.get('max_ips', 1000))
-    # صناعة توكن مستحيل التخمين
     token = "SMR-" + secrets.token_hex(10).upper()
     
-    conn = sqlite3.connect('samurai.db')
-    c = conn.cursor()
-    c.execute("INSERT INTO tokens (token, status, max_ips) VALUES (?, 'NEW', ?)", (token, max_ips))
-    conn.commit()
-    conn.close()
+    new_token = {
+        "token": token,
+        "hwid": None,
+        "start_date": None,
+        "expiry": None,
+        "status": "NEW",
+        "max_ips": max_ips
+    }
+    
+    tokens_collection.insert_one(new_token)
     return redirect(f'/samurai/proxies/admin/dashboard?pwd={ADMIN_PASS}')
 
 # 🔴 API التحقق الذي يكلمه التطبيق 🔴
@@ -142,37 +133,50 @@ def validate():
     token = request.form.get('token')
     hwid = request.form.get('hwid')
     
-    conn = sqlite3.connect('samurai.db')
-    c = conn.cursor()
-    c.execute("SELECT hwid, expiry, status, max_ips FROM tokens WHERE token=?", (token,))
-    row = c.fetchone()
+    row = tokens_collection.find_one({"token": token})
     
     if not row:
         return jsonify({"status": "INVALID"})
         
-    db_hwid, expiry_str, status, max_ips = row
+    db_hwid = row.get("hwid")
+    expiry_str = row.get("expiry")
+    status = row.get("status")
+    max_ips = row.get("max_ips", 1000)
     
     if status == 'BURNED':
         return jsonify({"status": "BURNED"})
         
-    if db_hwid is None:
+    # تفعيل التوكن لأول مرة
+    if not db_hwid:
         now = datetime.datetime.now()
         start_date = now.strftime("%Y-%m-%d %H:%M:%S")
         expiry = (now + datetime.timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
-        c.execute("UPDATE tokens SET hwid=?, start_date=?, expiry=?, status='ACTIVE' WHERE token=?", (hwid, start_date, expiry, token))
-        conn.commit()
+        
+        tokens_collection.update_one(
+            {"token": token},
+            {"$set": {"hwid": hwid, "start_date": start_date, "expiry": expiry, "status": "ACTIVE"}}
+        )
         return jsonify({"status": "VALID", "max_ips": max_ips})
         
+    # حماية من النسخ (HWID Mismatch)
     if db_hwid != hwid:
-        c.execute("UPDATE tokens SET status='BURNED' WHERE token=?", (token,))
-        conn.commit()
+        tokens_collection.update_one({"token": token}, {"$set": {"status": "BURNED"}})
         return jsonify({"status": "BURNED"})
         
+    # إذا كانت البصمة متطابقة، نفحص وقت الانتهاء
     if db_hwid == hwid:
-        expiry_date = datetime.datetime.strptime(expiry_str, "%Y-%m-%d %H:%M:%S")
-        if datetime.datetime.now() > expiry_date:
-            return jsonify({"status": "EXPIRED"})
+        if expiry_str:
+            expiry_date = datetime.datetime.strptime(expiry_str, "%Y-%m-%d %H:%M:%S")
+            if datetime.datetime.now() > expiry_date:
+                tokens_collection.update_one({"token": token}, {"$set": {"status": "EXPIRED"}})
+                return jsonify({"status": "EXPIRED"})
+                
         return jsonify({"status": "VALID", "max_ips": max_ips})
+
+# نقطة اتصال لإبقاء رندر مستيقظاً (Uptime Robot)
+@app.route('/')
+def home():
+    return "Samurai Server is Online."
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
