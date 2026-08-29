@@ -3,25 +3,29 @@ from pymongo import MongoClient
 import certifi
 import datetime
 import secrets
-import os
 
 app = Flask(__name__)
 
+# 🔴 إعدادات الدخول 🔴
 ADMIN_PASS = "samurai2026" 
 
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://mimodj615_db_user:9C3rJ7Rgq05lAaSj@cluster0.5npg1u8.mongodb.net/?appName=Cluster0")
+# 🔴 رابط قاعدة البيانات (مدمج مباشرة لمنع أخطاء Render) 🔴
+MONGO_URI = "mongodb+srv://mimodj615_db_user:9C3rJ7Rgq05lAaSj@cluster0.5npg1u8.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
-# استخدام الخيار النهائي لتخطي حظر شهادات الأمان في Render
-client = MongoClient(
-    MONGO_URI, 
-    tls=True, 
-    tlsCAFile=certifi.where(), 
-    tlsAllowInvalidCertificates=True,
-    serverSelectionTimeoutMS=5000
-)
-db = client["samurai_db"]
-tokens_collection = db["tokens"]
+# 🔴 الاتصال الآمن بقاعدة البيانات 🔴
+try:
+    client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
+    db = client["samurai_db"]
+    tokens_collection = db["tokens"]
+    # فحص الاتصال للتأكد أنه يعمل
+    client.admin.command('ping')
+    print("✅ Successfully connected to MongoDB!")
+except Exception as e:
+    print("❌ MongoDB Connection Error:", e)
 
+# ==========================================
+# تصميم لوحة التحكم
+# ==========================================
 DASHBOARD_HTML = """
 <!DOCTYPE html>
 <html>
@@ -101,12 +105,21 @@ DASHBOARD_HTML = """
 </html>
 """
 
+# ==========================================
+# مسارات السيرفر (Routes)
+# ==========================================
 @app.route('/samurai/proxies/admin/dashboard')
 def dashboard():
     pwd = request.args.get('pwd')
     if pwd != ADMIN_PASS:
         return "Access Denied. Unauthorized.", 401
-    tokens = list(tokens_collection.find().sort("_id", -1))
+    
+    # جلب البيانات بأمان
+    try:
+        tokens = list(tokens_collection.find().sort("_id", -1))
+    except Exception as e:
+        return f"Database Error: {e}", 500
+        
     return render_template_string(DASHBOARD_HTML, tokens=tokens, datetime=datetime.datetime, pwd=pwd)
 
 @app.route('/samurai/proxies/admin/create', methods=['POST'])
@@ -114,8 +127,10 @@ def create_token():
     pwd = request.form.get('password')
     if pwd != ADMIN_PASS:
         return "Unauthorized!", 401
+        
     max_ips = int(request.form.get('max_ips', 1000))
     token = "SMR-" + secrets.token_hex(10).upper()
+    
     new_token = {
         "token": token,
         "hwid": None,
@@ -124,6 +139,7 @@ def create_token():
         "status": "NEW",
         "max_ips": max_ips
     }
+    
     tokens_collection.insert_one(new_token)
     return redirect(f'/samurai/proxies/admin/dashboard?pwd={ADMIN_PASS}')
 
@@ -131,7 +147,11 @@ def create_token():
 def validate():
     token = request.form.get('token')
     hwid = request.form.get('hwid')
-    row = tokens_collection.find_one({"token": token})
+    
+    try:
+        row = tokens_collection.find_one({"token": token})
+    except:
+        return jsonify({"status": "ERROR"})
     
     if not row:
         return jsonify({"status": "INVALID"})
@@ -148,6 +168,7 @@ def validate():
         now = datetime.datetime.now()
         start_date = now.strftime("%Y-%m-%d %H:%M:%S")
         expiry = (now + datetime.timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+        
         tokens_collection.update_one(
             {"token": token},
             {"$set": {"hwid": hwid, "start_date": start_date, "expiry": expiry, "status": "ACTIVE"}}
@@ -164,11 +185,12 @@ def validate():
             if datetime.datetime.now() > expiry_date:
                 tokens_collection.update_one({"token": token}, {"$set": {"status": "EXPIRED"}})
                 return jsonify({"status": "EXPIRED"})
+                
         return jsonify({"status": "VALID", "max_ips": max_ips})
 
 @app.route('/')
 def home():
-    return "Samurai Server is Online."
+    return "Samurai System is ONLINE and CONNECTED."
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
