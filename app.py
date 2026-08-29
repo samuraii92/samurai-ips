@@ -10,7 +10,7 @@ app = Flask(__name__)
 ADMIN_PASS = "samurai2026"
 
 # 🔴 رابط قاعدة البيانات (مدمج مباشرة) 🔴
-MONGO_URI = "mongodb+srv://mimodj615_db_user:<db_password>@cluster0.5npg1u8.mongodb.net/?appName=Cluster0"
+MONGO_URI = "mongodb+srv://mimodj615_db_user:9C3rJ7Rgq05lAaSj@cluster0.5npg1u8.mongodb.net"
 
 # 🔴 الاتصال الآمن بقاعدة البيانات 🔴
 try:
