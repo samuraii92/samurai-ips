@@ -6,10 +6,10 @@ import os
 
 app = Flask(__name__)
 
-# 🔴 كلمة السر الخاصة بك للدخول للوحة التحكم 🔴
+# كلمة السر الخاصة بك للدخول للوحة التحكم
 ADMIN_PASS = "samurai2026" 
 
-# الاتصال بقاعدة بيانات MongoDB السحابية (عن طريق متغيرات البيئة في رندر)
+# الاتصال بقاعدة بيانات MongoDB السحابية عبر متغيرات البيئة
 MONGO_URI = os.environ.get("MONGO_URI")
 client = MongoClient(MONGO_URI)
 db = client["samurai_db"]
@@ -95,7 +95,7 @@ DASHBOARD_HTML = """
 </html>
 """
 
-# 🔴 رابط لوحة التحكم 🔴
+# رابط لوحة التحكم
 @app.route('/samurai/proxies/admin/dashboard')
 def dashboard():
     pwd = request.args.get('pwd')
@@ -106,6 +106,7 @@ def dashboard():
     tokens = list(tokens_collection.find().sort("_id", -1))
     return render_template_string(DASHBOARD_HTML, tokens=tokens, datetime=datetime.datetime, pwd=pwd)
 
+# إنشاء توكن جديد
 @app.route('/samurai/proxies/admin/create', methods=['POST'])
 def create_token():
     pwd = request.form.get('password')
@@ -127,7 +128,7 @@ def create_token():
     tokens_collection.insert_one(new_token)
     return redirect(f'/samurai/proxies/admin/dashboard?pwd={ADMIN_PASS}')
 
-# 🔴 API التحقق الذي يكلمه التطبيق 🔴
+# API التحقق الذي يكلمه التطبيق
 @app.route('/api/validate', methods=['POST'])
 def validate():
     token = request.form.get('token')
