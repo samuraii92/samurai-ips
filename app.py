@@ -7,10 +7,10 @@ import secrets
 app = Flask(__name__)
 
 # 🔴 إعدادات الدخول 🔴
-ADMIN_PASS = "samurai2026" 
+ADMIN_PASS = "samurai2026"
 
-# 🔴 رابط قاعدة البيانات (مدمج مباشرة لمنع أخطاء Render) 🔴
-MONGO_URI = "mongodb+srv://mimodj615_db_user:9C3rJ7Rgq05lAaSj@cluster0.5npg1u8.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+# 🔴 رابط قاعدة البيانات (مدمج مباشرة) 🔴
+MONGO_URI = "mongodb+srv://mimodj615_db_user:<db_password>@cluster0.5npg1u8.mongodb.net/?appName=Cluster0"
 
 # 🔴 الاتصال الآمن بقاعدة البيانات 🔴
 try:
