@@ -1,4 +1,3 @@
 Flask==3.0.0
-pymongo==4.6.1
+pymongo[srv]==4.6.1
 certifi
-gunicorn
