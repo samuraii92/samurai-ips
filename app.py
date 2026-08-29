@@ -1,5 +1,6 @@
 from flask import Flask, request, render_template_string, redirect, jsonify
 from pymongo import MongoClient
+import certifi  # مكتبة شهادات الأمان (الحل الجذري)
 import datetime
 import secrets
 import os
@@ -9,8 +10,11 @@ app = Flask(__name__)
 # كلمة السر الخاصة بك للدخول للوحة التحكم
 ADMIN_PASS = "samurai2026" 
 
+# الرابط الخاص بك
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://mimodj615_db_user:9C3rJ7Rgq05lAaSj@cluster0.5npg1u8.mongodb.net/?appName=Cluster0")
-client = MongoClient(MONGO_URI)
+
+# الاتصال بقاعدة البيانات مع إجبار استخدام شهادات الأمان الموثوقة
+client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
 db = client["samurai_db"]
 tokens_collection = db["tokens"]
 
@@ -173,7 +177,7 @@ def validate():
                 
         return jsonify({"status": "VALID", "max_ips": max_ips})
 
-# نقطة اتصال لإبقاء رندر مستيقظاً (Uptime Robot)
+# نقطة اتصال لإبقاء رندر مستيقظاً
 @app.route('/')
 def home():
     return "Samurai Server is Online."
